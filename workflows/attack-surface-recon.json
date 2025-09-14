@@ -1,0 +1,29 @@
+{
+  "name": "attack-surface-recon",
+  "target": "example.com",
+  "tasks": [
+    {
+      "name": "Subdomain Finder",
+      "description": "enumerate subdomains",
+      "result": "subdomains.txt",
+      "command": "subfinder -d {target} -silent -o {result}",
+      "tasks": [
+        {
+          "name": "Probe HTTP(S)",
+          "description": "which hosts are alive",
+          "result": "http_result.txt",
+          "command": "httpx -l {parent_result} -silent -follow-redirects -mc 200,301,302,401,403 -o {result}",
+          "tasks": [
+            {
+              "name": "Collect URLs",
+              "description": "crawl endpoints from live hosts",
+              "result": "urls.txt",
+              "command": "katana -list {parent_result} -d 1 -rl 50 -silent -o {result}",
+              "tasks": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

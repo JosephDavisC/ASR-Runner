@@ -1,0 +1,27 @@
+# Binaries
+/asr-runner
+/asr-runner.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output folders
+/out/
+out/
+
+# Build artifacts
+*.log
+*.out
+
+# Dependency directories
+vendor/
+bin/
+dist/
+
+# macOS junk
+.DS_Store
