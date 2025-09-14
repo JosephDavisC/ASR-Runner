@@ -1,4 +1,4 @@
-# 🔎 asr-runner
+# 🔎 ASR-Runner
 
 *A lightweight **Attack Surface Reconnaissance - runner** built in Go, wrapping [subfinder](https://github.com/projectdiscovery/subfinder), [httpx](https://github.com/projectdiscovery/httpx), and [katana](https://github.com/projectdiscovery/katana).*
 
