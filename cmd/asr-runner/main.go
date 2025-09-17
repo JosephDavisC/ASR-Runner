@@ -466,7 +466,6 @@ func uiStream(w http.ResponseWriter, r *http.Request) {
 		case <-job.done:
 			fmt.Fprintf(w, "data: [run complete]\\n\n\n")
 			flusher.Flush()
-			// Free memory; fine because /ai supports outdir+target fallback.
 			runsMu.Lock()
 			delete(runs, id)
 			runsMu.Unlock()
@@ -483,10 +482,10 @@ func uiStream(w http.ResponseWriter, r *http.Request) {
 
 func uiAI(w http.ResponseWriter, r *http.Request) {
 	type req struct {
-		RunID  string `json:"run_id"` // optional
-		Outdir string `json:"outdir"` // optional fallback
-		Target string `json:"target"` // optional fallback
-		Model  string `json:"model"`  // optional (default gpt-4o-mini)
+		RunID  string `json:"run_id"`
+		Outdir string `json:"outdir"`
+		Target string `json:"target"`
+		Model  string `json:"model"`
 	}
 	var in req
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {

@@ -4,8 +4,7 @@
 
 ---
 
-[![Watch the video](https://img.youtube.com/vi/TlSJXNlGdAQ/0.jpg)](https://youtu.be/TlSJXNlGdAQ)
----
+[![Watch the video](https://img.youtube.com/vi/i9A7b6rXYOU/0.jpg)](https://youtu.be/i9A7b6rXYOU)---
 
 ## 🚀 What is this?
 
