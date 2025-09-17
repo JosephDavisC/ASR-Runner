@@ -15,6 +15,7 @@ It automates **attack surface reconnaissance** in a workflow-like fashion:
 1. **Subdomain Enumeration** → Find subdomains of a target  
 2. **HTTP Probing** → Check which subdomains are alive  
 3. **URL Collection** → Crawl endpoints from those live hosts  
+4. **AI Report Generation** → Generate security analysis reports using OpenAI
 
 It runs tasks sequentially, saving results into clean output files — no copy-pasting between tools needed.
 
@@ -26,6 +27,7 @@ It runs tasks sequentially, saving results into clean output files — no copy-p
 - ⚡ **Orchestrates ProjectDiscovery tools** – subfinder → httpx → katana
 - 🌐 **Web UI** – Start with `--serve` and manage runs from a browser
 - 🖥 **CLI mode** – Run directly with `--workflow` + `--target`
+- 🤖 **AI-powered reports** – Generate security analysis with OpenAI integration
 - 🔄 **Continue on error** and **dry-run** modes
 - 📂 **Output management** – Each run gets its own timestamped folder
 
@@ -41,11 +43,41 @@ cd asr-runner
 go build ./cmd/asr-runner
 ```
 
-Make sure [subfinder](https://github.com/projectdiscovery/subfinder), [httpx](https://github.com/projectdiscovery/httpx), and [katana](https://github.com/projectdiscovery/katana) are installed and in your `$PATH`.
+Install required tools:
+
+```bash
+# ProjectDiscovery tools
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest  
+go install -v github.com/projectdiscovery/katana/cmd/katana@latest
+
+# Python dependencies for AI reports (optional)
+pip3 install openai
+```
+
+Make sure tools are in your `$PATH`:
+
+```bash
+export PATH=$PATH:$(go env GOPATH)/bin
+```
 
 ---
 
 ## 🛠 Usage
+
+### Web UI Mode (Recommended)
+
+```bash
+./asr-runner --serve --addr :8090
+```
+
+Then open [http://localhost:8090](http://localhost:8090) in your browser.
+
+**Features:**
+- Real-time log streaming
+- Interactive workflow editing
+- **AI report generation** with live preview
+- Side-by-side logs and report view
 
 ### CLI Mode
 
@@ -62,14 +94,24 @@ Options:
 - `--continue-on-error` : Skip failed tasks and keep running
 - `--plan` : Show execution plan and exit
 
-### Web UI Mode
+---
+
+## 🤖 AI Report Generation
+
+Set up OpenAI API key:
 
 ```bash
-./asr-runner --serve --addr :8090
+export OPENAI_API_KEY="your-api-key-here"
 ```
 
-Then open [http://localhost:8090](http://localhost:8090) in your browser.  
-You can paste/edit workflows and watch logs in real time.
+The AI feature automatically:
+- Analyzes discovered subdomains, live hosts, and URLs
+- Generates concise security reports with actionable insights
+- Identifies top opportunities and follow-up actions
+- Saves reports as `ai_draft.md` in the output directory
+
+**Web UI:** Check "Generate AI Report" before running
+**CLI:** Reports can be generated manually using `make_ai_report.py`
 
 ---
 
@@ -121,6 +163,7 @@ out/
     subdomains.txt
     http_result.txt
     urls.txt
+    ai_draft.md          # Generated AI report
 ```
 
 ---
@@ -130,4 +173,3 @@ out/
 This tool is intended **only for educational and authorized security testing purposes.**  
 
 ---
-

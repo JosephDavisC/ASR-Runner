@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,7 +19,10 @@ import (
 	"time"
 )
 
-// ====== Types ======
+/* ===========================
+          Data types
+=========================== */
+
 type Task struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -26,13 +30,17 @@ type Task struct {
 	Command     string `json:"command"`
 	Tasks       []Task `json:"tasks"`
 }
+
 type Workflow struct {
 	Name   string `json:"name"`
 	Target string `json:"target"`
 	Tasks  []Task `json:"tasks"`
 }
 
-// ====== CLI flags ======
+/* ===========================
+          CLI flags
+=========================== */
+
 var (
 	flagWorkflow = flag.String("workflow", "", "Path to workflow JSON")
 	flagTarget   = flag.String("target", "", "Override the workflow target")
@@ -45,7 +53,10 @@ var (
 	flagAddr     = flag.String("addr", ":8080", "HTTP listen address (for --serve)")
 )
 
-// ANSI colors
+/* ===========================
+          ANSI colors
+=========================== */
+
 const (
 	cReset = "\033[0m"
 	cBold  = "\033[1m"
@@ -55,10 +66,13 @@ const (
 	cGrey  = "\033[90m"
 )
 
+/* ===========================
+              main
+=========================== */
+
 func main() {
 	flag.Parse()
 
-	// Web UI mode
 	if *flagServe {
 		if err := startServer(*flagAddr); err != nil {
 			fail("serve: %v", err)
@@ -67,7 +81,7 @@ func main() {
 	}
 
 	if *flagWorkflow == "" {
-		fail("usage: asr-runner --workflow ../workflows/attack-surface-recon.json --target example.com")
+		fail("usage: asr-runner --workflow ./workflows/attack-surface-recon.json --target example.com")
 	}
 
 	wf, err := loadWorkflow(*flagWorkflow)
@@ -80,8 +94,7 @@ func main() {
 		fail("empty target: set in JSON or pass --target")
 	}
 
-	runDir := filepath.Join(*flagOutDir,
-		fmt.Sprintf("%s-%s", sanitize(wf.Name), time.Now().Format("20060102-150405")))
+	runDir := filepath.Join(*flagOutDir, fmt.Sprintf("%s-%s", sanitize(wf.Name), time.Now().Format("20060102-150405")))
 	check(os.MkdirAll(runDir, 0o755), "create run dir")
 
 	fmt.Printf("%s▶ %s%s\n", cBold, wf.Name, cReset)
@@ -111,7 +124,10 @@ func main() {
 	fmt.Printf("%s✅ done%s in %s\n", cGreen, cReset, time.Since(start).Truncate(time.Millisecond))
 }
 
-// ====== Core runner ======
+/* ===========================
+         Core runner
+=========================== */
+
 func loadWorkflow(path string) (*Workflow, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -177,7 +193,10 @@ func execTask(ctx context.Context, t *Task, target, parentResult, runDir string)
 	return nil
 }
 
-// ====== Helpers ======
+/* ===========================
+            Helpers
+=========================== */
+
 func spinner(ctx context.Context, msg string) {
 	frames := []rune{'|', '/', '-', '\\'}
 	t := time.NewTicker(120 * time.Millisecond)
@@ -255,7 +274,10 @@ func check(err error, when string) {
 	}
 }
 
-// ====== Plan mode (preview) ======
+/* ===========================
+          Plan (preview)
+=========================== */
+
 func printPlan(wf *Workflow, runDir string) {
 	fmt.Println("Execution plan:")
 	for _, t := range wf.Tasks {
@@ -288,9 +310,13 @@ func printPlanTask(t Task, level int, target, parentResult, runDir string) {
 	}
 }
 
-// ====== Web UI ======
+/* ===========================
+            Web UI
+=========================== */
+
 type runJob struct {
 	id     string
+	target string
 	outdir string
 	logs   chan string
 	done   chan struct{}
@@ -306,6 +332,7 @@ func startServer(addr string) error {
 	mux.HandleFunc("/", uiIndex)
 	mux.HandleFunc("/run", uiRun)
 	mux.HandleFunc("/stream", uiStream)
+	mux.HandleFunc("/ai", uiAI)
 
 	fmt.Printf("Serving asr-runner UI on http://localhost%s\n", addr)
 	return http.ListenAndServe(addr, mux)
@@ -342,7 +369,7 @@ func uiRun(w http.ResponseWriter, r *http.Request) {
 	_ = os.MkdirAll(outdir, 0o755)
 
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	job := &runJob{id: id, outdir: outdir, logs: make(chan string, 1024), done: make(chan struct{})}
+	job := &runJob{id: id, outdir: outdir, target: wf.Target, logs: make(chan string, 1024), done: make(chan struct{})}
 
 	runsMu.Lock()
 	runs[id] = job
@@ -351,7 +378,7 @@ func uiRun(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer close(job.done)
 		ctx := context.Background()
-		job.logs <- fmt.Sprintf("▶ %s\n  target: %s\n  outdir: %s\n\n", wf.Name, wf.Target, outdir)
+		job.logs <- fmt.Sprintf("outdir: %s\n\n▶ %s\n  target: %s\n  outdir: %s\n\n", outdir, wf.Name, wf.Target, outdir)
 		for i := range wf.Tasks {
 			job.logs <- fmt.Sprintf("• %s\n", wf.Tasks[i].Name)
 			if err := execTaskWeb(ctx, &wf.Tasks[i], wf.Target, "", outdir, job.logs); err != nil {
@@ -363,7 +390,7 @@ func uiRun(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"run_id": id, "outdir": outdir})
+	json.NewEncoder(w).Encode(map[string]string{"run_id": id, "outdir": outdir, "target": wf.Target})
 }
 
 func execTaskWeb(ctx context.Context, t *Task, target, parentResult, runDir string, logs chan<- string) error {
@@ -439,8 +466,9 @@ func uiStream(w http.ResponseWriter, r *http.Request) {
 		case <-job.done:
 			fmt.Fprintf(w, "data: [run complete]\\n\n\n")
 			flusher.Flush()
+			// Free memory; fine because /ai supports outdir+target fallback.
 			runsMu.Lock()
-			delete(runs, id) // free memory; new streams will 404
+			delete(runs, id)
 			runsMu.Unlock()
 			return
 		case <-r.Context().Done():
@@ -449,26 +477,157 @@ func uiStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/* ===========================
+        AI Draft endpoint
+=========================== */
+
+func uiAI(w http.ResponseWriter, r *http.Request) {
+	type req struct {
+		RunID  string `json:"run_id"` // optional
+		Outdir string `json:"outdir"` // optional fallback
+		Target string `json:"target"` // optional fallback
+		Model  string `json:"model"`  // optional (default gpt-4o-mini)
+	}
+	var in req
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	model := strings.TrimSpace(in.Model)
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
+
+	var outdir, target string
+
+	// Prefer run_id if still present
+	if in.RunID != "" {
+		runsMu.RLock()
+		job := runs[in.RunID]
+		runsMu.RUnlock()
+		if job != nil {
+			outdir = job.outdir
+			target = job.target
+		}
+	}
+	// Fallback to provided outdir/target
+	if outdir == "" || target == "" {
+		outdir = strings.TrimSpace(in.Outdir)
+		target = strings.TrimSpace(in.Target)
+	}
+	if outdir == "" || target == "" {
+		http.Error(w, "need run_id or (outdir + target)", 400)
+		return
+	}
+	if _, err := os.Stat(outdir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			http.Error(w, "outdir not found: "+outdir, 400)
+			return
+		}
+		http.Error(w, "outdir error: "+err.Error(), 500)
+		return
+	}
+
+	py := getenv("PYTHON_BIN", "python3")
+	script := getenv("AI_SCRIPT", "./make_ai_report.py")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, py, script, "-t", target, "-i", outdir, "--model", model)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("ai script error: %v\n%s", err, string(out)), 500)
+		return
+	}
+
+	mdPath := filepath.Join(outdir, "ai_draft.md")
+	md, readErr := os.ReadFile(mdPath)
+	if readErr != nil {
+		http.Error(w, "ai_draft.md not found: "+readErr.Error(), 500)
+		return
+	}
+
+	preview := firstNRunes(string(md), 4000)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":      true,
+		"path":    mdPath,
+		"preview": preview,
+	})
+}
+
+/* ===========================
+       Small utilities
+=========================== */
+
+func getenv(key, def string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	return v
+}
+
+func firstNRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	i := 0
+	for idx := range s {
+		if i == n {
+			return s[:idx]
+		}
+		i++
+	}
+	return s
+}
+
+/* ===========================
+         Embedded UI
+=========================== */
+
 const indexHTML = `<!doctype html><html><head><meta charset="utf-8"/>
 <title>asr-runner UI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
-body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:32px;max-width:1000px}
+body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:32px;max-width:1100px}
 textarea{width:100%;height:260px}
-pre{background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;white-space:pre-wrap}
-input,button{font:inherit;padding:8px 12px}
+pre{background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;white-space:pre-wrap;max-height:300px;overflow:auto}
+input,button,select{font:inherit;padding:8px 12px}
 label{display:block;margin:12px 0 6px}
-.row{display:flex;gap:12px;align-items:center}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+small{color:#64748b}
 </style></head><body>
 <h2>asr-runner</h2>
+
 <div class="row">
-  <label>Target: <input id="target" placeholder="example.com"/></label>
+  <label>Target: <input id="target" placeholder="example.com" style="min-width:260px"/></label>
   <button id="run">Run</button>
 </div>
+
 <label>Workflow (JSON):</label>
 <textarea id="wf"></textarea>
+
 <h3>Logs</h3>
 <pre id="logs"></pre>
+
+<h3>AI Draft Report</h3>
+<div class="row">
+  <label>Model:
+    <select id="model">
+      <option value="gpt-4o-mini" selected>gpt-4o-mini (OpenAI)</option>
+      <option value="gpt-4o">gpt-4o (OpenAI)</option>
+    </select>
+  </label>
+  <button id="makeAI">Make AI Draft</button>
+</div>
+<pre id="ai"></pre>
+
 <script>
+let lastRun = null;
+
 const sample = {
   "name":"attack-surface-recon",
   "target":"example.com",
@@ -482,24 +641,51 @@ const sample = {
             {"name":"Collect URLs","description":"crawl endpoints from live hosts","result":"urls.txt",
              "command":"katana -list {parent_result} -d 1 -rl 50 -silent -o {result}",
              "tasks":[] } ]} ]} ]};
+
 document.getElementById('wf').value = JSON.stringify(sample,null,2);
+
 document.getElementById('run').onclick = async () => {
   const wf = document.getElementById('wf').value;
   const target = document.getElementById('target').value;
   const resp = await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workflow:wf,target})});
-  const {run_id,outdir} = await resp.json();
+  if(!resp.ok){ alert(await resp.text()); return; }
+  const {run_id,outdir,target:tg} = await resp.json();
+  lastRun = {id:run_id,outdir:outdir,target:tg};
+
   const es = new EventSource('/stream?id='+run_id);
   const logs = document.getElementById('logs');
   logs.textContent = 'outdir: '+outdir+'\\n\\n';
   es.onmessage = (e)=>{
     if(e.data === '[run complete]'){
       logs.textContent += 'run complete\\n';
-      es.close(); // stop reconnect loop
+      es.close();
       return;
     }
     logs.textContent += e.data.replaceAll('\\n','\\n') + '\\n';
     logs.scrollTop = logs.scrollHeight;
   };
+};
+
+document.getElementById('makeAI').onclick = async () => {
+  if(!lastRun){ alert('Run something first.'); return; }
+  const model = document.getElementById('model').value;
+  const resp = await fetch('/ai',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      run_id: lastRun.id,          // if still present on server
+      outdir: lastRun.outdir,      // fallback
+      target: lastRun.target,      // fallback
+      model
+    })
+  });
+  const ai = document.getElementById('ai');
+  if(!resp.ok){
+    ai.textContent = "AI error: "+await resp.text();
+    return;
+  }
+  const data = await resp.json();
+  ai.textContent = "Saved: "+data.path+"\\n\\n"+data.preview;
 };
 </script>
 </body></html>`
